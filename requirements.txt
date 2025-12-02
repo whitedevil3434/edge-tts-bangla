@@ -1,5 +1,5 @@
-fastapi==0.109.0fastapi
-uvicorn
+fastapi==0.109.0
+uvicorn==0.27.0
 gTTS
 git+https://github.com/rany2/edge-tts.git@master
 librosa
