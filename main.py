@@ -1,57 +1,49 @@
 from fastapi import FastAPI, Response
-import edge_tts
-from gtts import gTTS
+import azure.cognitiveservices.speech as speechsdk
 import uvicorn
-import io
+import os
 
 app = FastAPI()
 
-# World Class Bangla Voice
-EDGE_VOICE = "bn-BD-PradeepNeural"
+# ——— CONFIGURATION ———
+# Code gets Key from Render Environment Variables
+AZURE_SPEECH_KEY = os.environ.get("SPEECH_KEY") 
+AZURE_SERVICE_REGION = os.environ.get("SPEECH_REGION")
+
+# Best Bangla Voice (Official Azure)
+VOICE_NAME = "bn-BD-PradeepNeural"
 
 @app.get("/")
 def home():
-    return {"status": "Rizik TTS Service (Patched) 🚀"}
+    return {"status": "Rizik Azure TTS (Official) is Running 💎"}
 
 @app.get("/speak")
 async def speak(text: str):
-    """
-    Rizik Smart TTS Engine
-    1. Tries Edge TTS (PradeepNeural) with Latest Security Patch
-    2. Falls back to Google TTS if anything goes wrong
-    """
-    
-    # ——— PLAN A: EDGE TTS (The Best) ———
     try:
-        print(f"🎤 Trying Edge TTS for: {text[:15]}...")
+        # 1. Setup Configuration
+        speech_config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SERVICE_REGION)
+        speech_config.speech_synthesis_voice_name = VOICE_NAME
         
-        # New pattern to avoid 403 errors
-        communicate = edge_tts.Communicate(text, EDGE_VOICE)
-        audio_data = b""
-        
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_data += chunk["data"]
-        
-        if len(audio_data) > 0:
-            print("✅ Edge TTS Success")
-            return Response(content=audio_data, media_type="audio/mp3", headers={"X-TTS-Provider": "Edge-Neural"})
-            
-    except Exception as e:
-        print(f"⚠️ Edge Failed: {e}")
+        # We need audio bits, not speaker output
+        speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
 
-    # ——— PLAN B: GOOGLE TTS (The Savior) ———
-    print("🔄 Falling back to Google TTS...")
-    try:
-        mp3_fp = io.BytesIO()
-        tts = gTTS(text=text, lang='bn', slow=False)
-        tts.write_to_fp(mp3_fp)
-        mp3_fp.seek(0)
-        
-        return Response(content=mp3_fp.read(), media_type="audio/mp3", headers={"X-TTS-Provider": "Google-Standard"})
-        
+        # 2. Speak (Synthesize)
+        print(f"🎤 Generating Azure Voice for: {text[:15]}...")
+        result = speech_synthesizer.speak_text_async(text).get()
+
+        # 3. Check Result
+        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            print("✅ Azure Success!")
+            return Response(content=result.audio_data, media_type="audio/mp3")
+            
+        elif result.reason == speechsdk.ResultReason.Canceled:
+            details = result.cancellation_details
+            print(f"❌ Azure Error: {details.error_details}")
+            return {"error": "TTS Failed", "details": details.error_details}
+
     except Exception as e:
-        return {"error": "All systems failed", "details": str(e)}
+        print(f"🔥 System Error: {e}")
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
